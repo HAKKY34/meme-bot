@@ -21,3 +21,4 @@ RUN mkdir -p fonts
 
 # Запускаем бота
 CMD ["python", "bot.py"]
+

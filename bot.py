@@ -268,7 +268,7 @@ async def main():
     asyncio.create_task(run_web_server())
     
     # Даем серверу время запуститься
-    await asyncio.sleep(3)
+    await asyncio.sleep(2)
     
     # Удаляем вебхук на всякий случай
     await bot.delete_webhook()
@@ -276,9 +276,9 @@ async def main():
     # Небольшая пауза после удаления вебхука
     await asyncio.sleep(1)
     
-    # Запускаем бота с пропуском старых обновлений
+    # Запускаем бота
     logging.info("🤖 Бот запускается...")
-    await dp.start_polling(skip_updates=True)
+    await dp.start_polling()
 
 if __name__ == '__main__':
     try:

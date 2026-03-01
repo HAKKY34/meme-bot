@@ -7,6 +7,8 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from aiogram.types import ParseMode, ContentType
 from dotenv import load_dotenv
+from aiohttp import web
+import threading
 
 from check_sub import check_subscription, get_subscription_keyboard
 
@@ -91,6 +93,30 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
     output.seek(0)
     
     return output
+
+# ============= НОВЫЙ КОД ДЛЯ RENDER =============
+# Создаем простой HTTP сервер для Health Check
+async def handle_health(request):
+    """Обработчик для проверки здоровья"""
+    return web.Response(text="Бот работает!")
+
+async def run_web_server():
+    """Запускает веб-сервер на порту 10000"""
+    app = web.Application()
+    app.router.add_get('/', handle_health)
+    app.router.add_get('/health', handle_health)
+    
+    # Render ожидает порт 10000
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 10000)
+    
+    logging.info("🌐 Веб-сервер для Health Check запущен на порту 10000")
+    await site.start()
+    
+    # Держим сервер запущенным
+    await asyncio.Event().wait()
+# ================================================
 
 @dp.message_handler(commands=['start'])
 async def start_command(message: types.Message):
@@ -238,7 +264,11 @@ async def handle_text(message: types.Message):
 
 async def main():
     """Основная функция запуска бота"""
-    # Запускаем polling
+    # Запускаем HTTP сервер для Health Check в фоне
+    asyncio.create_task(run_web_server())
+    
+    # Запускаем бота
+    logging.info("🤖 Бот запускается...")
     await dp.start_polling()
 
 if __name__ == '__main__':

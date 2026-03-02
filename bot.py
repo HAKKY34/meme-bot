@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 # Инициализация бота и диспетчера
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 CHANNEL_ID = os.getenv('CHANNEL_ID')
+BOT_USERNAME = "@yourownmemes_bot"  # Водяной знак
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
@@ -44,9 +45,39 @@ except Exception as e:
     logger.error(f"❌ Не удалось загрузить шрифт: {e}")
     logger.info("📝 Скачайте шрифт Impact Cyrillic и положите в папку fonts/")
 
+def add_watermark(draw, img_width, img_height):
+    """Добавляет водяной знак (юзернейм бота) справа внизу"""
+    try:
+        # Маленький шрифт для водяного знака
+        watermark_font = ImageFont.truetype(FONT_PATH, int(img_height * 0.03))
+        
+        # Текст водяного знака
+        watermark_text = BOT_USERNAME
+        
+        # Получаем размер текста
+        text_width = draw.textlength(watermark_text, font=watermark_font)
+        text_height = watermark_font.size
+        
+        # Позиция: справа внизу с отступом
+        x = img_width - text_width - 10
+        y = img_height - text_height - 10
+        
+        # Рисуем с прозрачностью 5% (черный цвет с альфа-каналом)
+        for dx in range(-1, 2):
+            for dy in range(-1, 2):
+                if dx != 0 or dy != 0:
+                    draw.text((x + dx, y + dy), watermark_text, font=watermark_font, fill='black')
+        
+        # Основной текст с прозрачностью
+        draw.text((x, y), watermark_text, font=watermark_font, fill='white')
+        
+        logger.info("✅ Водяной знак добавлен")
+    except Exception as e:
+        logger.error(f"❌ Ошибка при добавлении водяного знака: {e}")
+
 def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> BytesIO:
     """
-    Создает мем с текстом сверху и снизу (текст по центру, с переносом строк)
+    Создает мем с текстом сверху и снизу
     """
     try:
         # Открываем изображение
@@ -55,7 +86,7 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
         
         # Создаем копию для рисования
         img_with_text = img.copy()
-        draw = ImageDraw.Draw(img_with_text)
+        draw = ImageDraw.Draw(img_with_text, 'RGBA')  # Используем RGBA для прозрачности
         
         # Функция для разбиения текста на строки
         def split_text_into_lines(text, font, max_width):
@@ -67,7 +98,6 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
             current_line = words[0]
             
             for word in words[1:]:
-                # Проверяем ширину с новым словом
                 test_line = current_line + " " + word
                 test_width = draw.textlength(test_line, font=font)
                 
@@ -80,13 +110,13 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
             lines.append(current_line)
             return lines
         
-        # Функция для подбора размера шрифта
-        def get_best_font_size(text, max_width, max_height, start_size=60):
+        # Функция для подбора размера шрифта (теперь текст занимает всю ширину)
+        def get_best_font_size(text, max_width, max_height, start_size=100):
             if not text:
                 return 40
             
-            # Пробуем разные размеры шрифта
-            for size in range(start_size, 20, -2):
+            # Пробуем разные размеры шрифта (начинаем с большого)
+            for size in range(start_size, 30, -2):
                 try:
                     test_font = ImageFont.truetype(FONT_PATH, size)
                     lines = split_text_into_lines(text, test_font, max_width)
@@ -94,19 +124,25 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
                     # Проверяем, помещается ли текст по высоте
                     total_height = len(lines) * (size + 5)
                     if total_height <= max_height:
+                        # Проверяем, заполняет ли текст всю ширину
+                        if lines:
+                            last_line_width = draw.textlength(lines[-1], font=test_font)
+                            # Если последняя строка сильно короче, пробуем увеличить шрифт
+                            if last_line_width < max_width * 0.6 and size < start_size - 10:
+                                continue
                         return size
                 except:
                     continue
             
-            return 20
+            return 40
         
-        # Определяем максимальную ширину текста (90% от ширины картинки)
-        max_text_width = int(img.width * 0.9)
-        max_text_height_top = int(img.height * 0.3)  # 30% высоты для верхнего текста
-        max_text_height_bottom = int(img.height * 0.3)  # 30% высоты для нижнего текста
+        # Определяем максимальную ширину текста (95% от ширины картинки)
+        max_text_width = int(img.width * 0.95)
+        max_text_height_top = int(img.height * 0.4)  # 40% высоты для верхнего текста
+        max_text_height_bottom = int(img.height * 0.4)  # 40% высоты для нижнего текста
         
         # Определяем размер шрифта для верхнего текста
-        if top_text:
+        if top_text and top_text.strip():
             top_font_size = get_best_font_size(top_text, max_text_width, max_text_height_top)
             top_font = ImageFont.truetype(FONT_PATH, top_font_size)
             top_lines = split_text_into_lines(top_text, top_font, max_text_width)
@@ -114,14 +150,14 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
             top_lines = []
         
         # Определяем размер шрифта для нижнего текста
-        if bottom_text:
+        if bottom_text and bottom_text.strip():
             bottom_font_size = get_best_font_size(bottom_text, max_text_width, max_text_height_bottom)
             bottom_font = ImageFont.truetype(FONT_PATH, bottom_font_size)
             bottom_lines = split_text_into_lines(bottom_text, bottom_font, max_text_width)
         else:
             bottom_lines = []
         
-        # Функция для рисования текста с обводкой
+        # Функция для рисования текста с обводкой (теперь тоньше)
         def draw_text_lines(lines, font, start_y, align_top=True):
             if not lines:
                 return
@@ -146,8 +182,8 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
                 # Y координата для текущей строки
                 line_y = y + (i * line_height)
                 
-                # Рисуем обводку (черный)
-                outline_range = max(2, int(font.size * 0.08))
+                # Рисуем обводку (теперь тоньше - 3% от размера шрифта)
+                outline_range = max(1, int(font.size * 0.03))  # Было 0.08, стало 0.03
                 for dx in range(-outline_range, outline_range + 1):
                     for dy in range(-outline_range, outline_range + 1):
                         if dx != 0 or dy != 0:
@@ -162,15 +198,18 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
                 except Exception as e:
                     logger.error(f"Ошибка при рисовании текста: {e}")
         
-        # Рисуем верхний текст
+        # Рисуем верхний текст (если есть)
         if top_lines:
             draw_text_lines(top_lines, top_font, 10, align_top=True)
             logger.info(f"✅ Верхний текст нарисован ({len(top_lines)} строк)")
         
-        # Рисуем нижний текст
+        # Рисуем нижний текст (если есть)
         if bottom_lines:
             draw_text_lines(bottom_lines, bottom_font, 10, align_top=False)
             logger.info(f"✅ Нижний текст нарисован ({len(bottom_lines)} строк)")
+        
+        # Добавляем водяной знак
+        add_watermark(draw, img.width, img.height)
         
         # Сохраняем в байты
         output = BytesIO()
@@ -221,12 +260,14 @@ async def start_command(message: types.Message):
             "👋 Привет! Я бот для создания мемов.\n\n"
             "📝 Как пользоваться:\n"
             "1. Отправь мне картинку\n"
-            "2. Напиши текст для верхней части\n"
-            "3. Напиши текст для нижней части\n\n"
-            "✨ Текст автоматически:\n"
-            "• Центрируется\n"
-            "• Переносится на новую строку\n"
-            "• Не выходит за границы\n\n"
+            "2. Напиши текст для верхней части (можно пропустить)\n"
+            "3. Напиши текст для нижней части (можно пропустить)\n\n"
+            "✨ Новые фишки:\n"
+            "• Текст автоматически растягивается на всю ширину\n"
+            "• Можно не писать верхний текст (просто нажми Enter)\n"
+            "• Можно не писать нижний текст\n"
+            "• Водяной знак @yourownmemes_bot справа внизу\n"
+            "• Обводка стала тоньше\n\n"
             "Я сделаю из этого мем!"
         )
     else:
@@ -291,11 +332,36 @@ async def handle_photo(message: types.Message):
         
         await message.answer(
             "📝 Теперь напиши текст для ВЕРХНЕЙ части мема\n"
-            "(или отправь /cancel чтобы отменить)"
+            "(или отправь /skip чтобы пропустить, или /cancel чтобы отменить)"
         )
     except Exception as e:
         logger.error(f"❌ Ошибка при обработке фото: {e}")
         await message.answer("❌ Не удалось обработать фото. Попробуй другую картинку.")
+
+@dp.message_handler(commands=['skip'])
+async def skip_command(message: types.Message):
+    """Пропустить ввод текста"""
+    user_id = message.from_user.id
+    
+    if user_id not in user_data:
+        await message.answer("❌ Сначала отправь картинку!")
+        return
+    
+    current_stage = user_data[user_id].get('stage')
+    
+    if current_stage == 'waiting_top_text':
+        # Пропускаем верхний текст
+        user_data[user_id]['top_text'] = ''
+        user_data[user_id]['stage'] = 'waiting_bottom_text'
+        await message.answer(
+            "📝 Теперь напиши текст для НИЖНЕЙ части мема\n"
+            "(или отправь /skip чтобы пропустить, или /cancel чтобы отменить)"
+        )
+    elif current_stage == 'waiting_bottom_text':
+        # Пропускаем нижний текст и создаем мем
+        await create_meme_from_data(user_id, '', message)
+    else:
+        await message.answer("❌ Непонятная команда. Напиши /cancel и начни заново.")
 
 @dp.message_handler(commands=['cancel'])
 async def cancel_command(message: types.Message):
@@ -306,6 +372,51 @@ async def cancel_command(message: types.Message):
         await message.answer("✅ Создание мема отменено. Можешь начать заново с отправки картинки.")
     else:
         await message.answer("🤷 Нет активного процесса создания мема.")
+
+async def create_meme_from_data(user_id, bottom_text, message):
+    """Создает мем из данных пользователя"""
+    top_text = user_data[user_id].get('top_text', '')
+    image_bytes = user_data[user_id].get('image')
+    
+    if not image_bytes:
+        await message.answer("❌ Что-то пошло не так. Начни заново с отправки картинки.")
+        del user_data[user_id]
+        return
+    
+    # Отправляем сообщение о начале обработки
+    processing_msg = await message.answer("🔄 Создаю мем... (это может занять несколько секунд)")
+    
+    try:
+        # Создаем мем
+        logger.info(f"Начинаю создание мема для пользователя {user_id}")
+        logger.info(f"Верхний текст: '{top_text}', Нижний текст: '{bottom_text}'")
+        
+        meme_image = create_meme_image(image_bytes, top_text, bottom_text)
+        
+        # Отправляем результат
+        await message.answer_photo(
+            photo=meme_image,
+            caption="🎉 Твой мем готов!\n\nСоздай новый - отправь ещё картинку!"
+        )
+        logger.info(f"✅ Мем отправлен пользователю {user_id}")
+        
+        # Удаляем сообщение о обработке
+        await processing_msg.delete()
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка создания мема для пользователя {user_id}: {e}")
+        logger.error(traceback.format_exc())
+        await message.answer(
+            "❌ Не удалось создать мем.\n"
+            "Возможные причины:\n"
+            "• Слишком большая картинка\n"
+            "• Неподдерживаемый формат\n"
+            "• Проблема со шрифтом\n\n"
+            "Попробуй другую картинку или напиши /start"
+        )
+    
+    # Очищаем данные пользователя
+    del user_data[user_id]
 
 @dp.message_handler(lambda message: message.text and not message.text.startswith('/'))
 async def handle_text(message: types.Message):
@@ -335,7 +446,7 @@ async def handle_text(message: types.Message):
     
     if current_stage == 'waiting_top_text':
         # Сохраняем верхний текст и ждем нижний
-        if len(message.text) > 200:  # Увеличил лимит, так как текст может быть длинным
+        if len(message.text) > 200:
             await message.answer("❌ Текст слишком длинный! Максимум 200 символов.")
             return
             
@@ -343,7 +454,7 @@ async def handle_text(message: types.Message):
         user_data[user_id]['stage'] = 'waiting_bottom_text'
         await message.answer(
             "📝 Теперь напиши текст для НИЖНЕЙ части мема\n"
-            "(или отправь /cancel чтобы отменить)"
+            "(или отправь /skip чтобы пропустить, или /cancel чтобы отменить)"
         )
         logger.info(f"Пользователь {user_id} ввел верхний текст: {message.text[:30]}...")
         
@@ -352,50 +463,8 @@ async def handle_text(message: types.Message):
         if len(message.text) > 200:
             await message.answer("❌ Текст слишком длинный! Максимум 200 символов.")
             return
-            
-        bottom_text = message.text
-        top_text = user_data[user_id].get('top_text', '')
-        image_bytes = user_data[user_id].get('image')
         
-        if not image_bytes or not top_text:
-            await message.answer("❌ Что-то пошло не так. Начни заново с отправки картинки.")
-            del user_data[user_id]
-            return
-        
-        logger.info(f"Пользователь {user_id} ввел нижний текст: {bottom_text[:30]}...")
-        
-        # Отправляем сообщение о начале обработки
-        processing_msg = await message.answer("🔄 Создаю мем... (это может занять несколько секунд)")
-        
-        try:
-            # Создаем мем
-            logger.info(f"Начинаю создание мема для пользователя {user_id}")
-            meme_image = create_meme_image(image_bytes, top_text, bottom_text)
-            
-            # Отправляем результат
-            await message.answer_photo(
-                photo=meme_image,
-                caption="🎉 Твой мем готов!\n\nСоздай новый - отправь ещё картинку!"
-            )
-            logger.info(f"✅ Мем отправлен пользователю {user_id}")
-            
-            # Удаляем сообщение о обработке
-            await processing_msg.delete()
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка создания мема для пользователя {user_id}: {e}")
-            logger.error(traceback.format_exc())
-            await message.answer(
-                "❌ Не удалось создать мем.\n"
-                "Возможные причины:\n"
-                "• Слишком большая картинка\n"
-                "• Неподдерживаемый формат\n"
-                "• Проблема со шрифтом\n\n"
-                "Попробуй другую картинку или напиши /start"
-            )
-        
-        # Очищаем данные пользователя
-        del user_data[user_id]
+        await create_meme_from_data(user_id, message.text, message)
 
 async def main():
     """Основная функция запуска бота"""

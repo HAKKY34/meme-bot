@@ -50,13 +50,13 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
     Создает мем с текстом как в интернете - классический размер
     """
     try:
-        # Открываем изображение и СРАЗУ конвертируем в RGBA (для прозрачности)
+        # Открываем изображение
         img = Image.open(BytesIO(image_bytes)).convert('RGBA')
         logger.info(f"✅ Изображение загружено: размер {img.width}x{img.height}")
         
         # Создаем копию
         img_with_text = img.copy()
-        draw = ImageDraw.Draw(img_with_text, 'RGBA')  # ВАЖНО: используем RGBA
+        draw = ImageDraw.Draw(img_with_text)
         
         # ===== КЛАССИЧЕСКИЙ РАЗМЕР МЕМА =====
         font_size = int(img.width * 0.08)
@@ -141,37 +141,44 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
                     
                     draw.text((x, line_y), line, font=font, fill='white')
         
-        # ===== ВОДЯНОЙ ЗНАК (ТЕПЕРЬ РАБОТАЕТ) =====
+        # ===== ВОДЯНОЙ ЗНАК (НОВЫЙ СПОСОБ - 100% РАБОЧИЙ) =====
         try:
-            # Шрифт для водяного знака (поменьше)
+            # Создаем отдельный слой для водяного знака
+            watermark_layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
+            watermark_draw = ImageDraw.Draw(watermark_layer)
+            
+            # Шрифт для водяного знака
             watermark_font = ImageFont.truetype(FONT_PATH, int(img.height * 0.025))
             watermark_text = BOT_USERNAME
             
             # Получаем размер текста
-            text_width = draw.textlength(watermark_text, font=watermark_font)
+            text_width = watermark_draw.textlength(watermark_text, font=watermark_font)
             text_height = watermark_font.size
             
             # Позиция: по центру вертикали, справа
             x = img.width - text_width - 8
             y = (img.height - text_height) // 2
             
-            # Сначала рисуем ЧЕРНУЮ обводку (непрозрачную)
+            # Рисуем черную обводку на слое (полностью непрозрачную)
             outline_range = 2
             for dx in range(-outline_range, outline_range + 1):
                 for dy in range(-outline_range, outline_range + 1):
                     if dx != 0 or dy != 0:
                         if (dx*dx + dy*dy) <= outline_range*outline_range:
-                            draw.text((x + dx, y + dy), watermark_text, font=watermark_font, fill='black')
+                            watermark_draw.text((x + dx, y + dy), watermark_text, font=watermark_font, fill='black')
             
-            # ПОТОМ рисуем белый текст с прозрачностью 5%
-            # (255, 255, 255, 13) где 13 = 5% от 255
-            draw.text((x, y), watermark_text, font=watermark_font, fill=(255, 255, 255, 13))
+            # Рисуем белый текст на слое с прозрачностью 5%
+            # (255,255,255,13) где 13 = 5% прозрачности
+            watermark_draw.text((x, y), watermark_text, font=watermark_font, fill=(255, 255, 255, 13))
+            
+            # Накладываем слой с водяным знаком на основное изображение
+            img_with_text = Image.alpha_composite(img_with_text, watermark_layer)
             
             logger.info("✅ Водяной знак добавлен с прозрачностью 5%")
         except Exception as e:
             logger.error(f"❌ Ошибка водяного знака: {e}")
         
-        # Сохраняем в PNG (сохраняет прозрачность)
+        # Сохраняем
         output = BytesIO()
         img_with_text.save(output, format='PNG', optimize=True)
         output.seek(0)

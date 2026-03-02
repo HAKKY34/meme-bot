@@ -45,49 +45,21 @@ except Exception as e:
     logger.error(f"❌ Не удалось загрузить шрифт: {e}")
     logger.info("📝 Скачайте шрифт Impact Cyrillic и положите в папку fonts/")
 
-def add_watermark(draw, img_width, img_height):
-    """Добавляет водяной знак (юзернейм бота) по центру справа с прозрачностью 5%"""
-    try:
-        # Маленький шрифт для водяного знака
-        watermark_font = ImageFont.truetype(FONT_PATH, int(img_height * 0.025))
-        watermark_text = BOT_USERNAME
-        
-        text_width = draw.textlength(watermark_text, font=watermark_font)
-        text_height = watermark_font.size
-        
-        # Позиция: по центру вертикали, справа
-        x = img_width - text_width - 8
-        y = (img_height - text_height) // 2
-        
-        # Обводка
-        for dx in range(-1, 2):
-            for dy in range(-1, 2):
-                if dx != 0 or dy != 0:
-                    draw.text((x + dx, y + dy), watermark_text, font=watermark_font, fill='black')
-        
-        # Прозрачный текст
-        draw.text((x, y), watermark_text, font=watermark_font, fill=(255, 255, 255, 13))
-        
-    except Exception as e:
-        logger.error(f"❌ Ошибка водяного знака: {e}")
-
 def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> BytesIO:
     """
     Создает мем с текстом как в интернете - классический размер
     """
     try:
-        # Открываем изображение
+        # Открываем изображение и СРАЗУ конвертируем в RGBA (для прозрачности)
         img = Image.open(BytesIO(image_bytes)).convert('RGBA')
         logger.info(f"✅ Изображение загружено: размер {img.width}x{img.height}")
         
         # Создаем копию
         img_with_text = img.copy()
-        draw = ImageDraw.Draw(img_with_text, 'RGBA')
+        draw = ImageDraw.Draw(img_with_text, 'RGBA')  # ВАЖНО: используем RGBA
         
         # ===== КЛАССИЧЕСКИЙ РАЗМЕР МЕМА =====
-        # Размер шрифта - 8% от ширины (золотая середина)
         font_size = int(img.width * 0.08)
-        # Ограничиваем от 40 до 90 пикселей
         font_size = max(40, min(90, font_size))
         logger.info(f"📏 Размер шрифта: {font_size}px")
         
@@ -96,7 +68,6 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
         except:
             font = ImageFont.load_default()
         
-        # Ширина текста - 85% от картинки
         max_text_width = int(img.width * 0.85)
         
         # Функция разбиения на строки
@@ -120,9 +91,9 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
             lines.append(current_line)
             return lines
         
-        # ===== ОТСТУПЫ КАК В ИНТЕРНЕТ-МЕМАХ =====
-        top_offset = int(img.height * 0.03)  # 3% от высоты сверху
-        bottom_offset = int(img.height * 0.03)  # 3% от высоты снизу
+        # ===== ОТСТУПЫ =====
+        top_offset = int(img.height * 0.03)
+        bottom_offset = int(img.height * 0.03)
         
         # Рисуем верхний текст
         if top_text and top_text.strip():
@@ -137,7 +108,7 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
                     x = (img.width - line_width) // 2
                     line_y = y + (i * line_height)
                     
-                    # Обводка 3px (классическая)
+                    # Обводка 3px
                     outline = 3
                     for dx in range(-outline, outline + 1):
                         for dy in range(-outline, outline + 1):
@@ -161,7 +132,6 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
                     x = (img.width - line_width) // 2
                     line_y = y + (i * line_height)
                     
-                    # Обводка 3px
                     outline = 3
                     for dx in range(-outline, outline + 1):
                         for dy in range(-outline, outline + 1):
@@ -171,15 +141,42 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
                     
                     draw.text((x, line_y), line, font=font, fill='white')
         
-        # Добавляем водяной знак
-        add_watermark(draw, img.width, img.height)
+        # ===== ВОДЯНОЙ ЗНАК (ТЕПЕРЬ РАБОТАЕТ) =====
+        try:
+            # Шрифт для водяного знака (поменьше)
+            watermark_font = ImageFont.truetype(FONT_PATH, int(img.height * 0.025))
+            watermark_text = BOT_USERNAME
+            
+            # Получаем размер текста
+            text_width = draw.textlength(watermark_text, font=watermark_font)
+            text_height = watermark_font.size
+            
+            # Позиция: по центру вертикали, справа
+            x = img.width - text_width - 8
+            y = (img.height - text_height) // 2
+            
+            # Сначала рисуем ЧЕРНУЮ обводку (непрозрачную)
+            outline_range = 2
+            for dx in range(-outline_range, outline_range + 1):
+                for dy in range(-outline_range, outline_range + 1):
+                    if dx != 0 or dy != 0:
+                        if (dx*dx + dy*dy) <= outline_range*outline_range:
+                            draw.text((x + dx, y + dy), watermark_text, font=watermark_font, fill='black')
+            
+            # ПОТОМ рисуем белый текст с прозрачностью 5%
+            # (255, 255, 255, 13) где 13 = 5% от 255
+            draw.text((x, y), watermark_text, font=watermark_font, fill=(255, 255, 255, 13))
+            
+            logger.info("✅ Водяной знак добавлен с прозрачностью 5%")
+        except Exception as e:
+            logger.error(f"❌ Ошибка водяного знака: {e}")
         
-        # Сохраняем
+        # Сохраняем в PNG (сохраняет прозрачность)
         output = BytesIO()
         img_with_text.save(output, format='PNG', optimize=True)
         output.seek(0)
         
-        logger.info("✅ Мем готов в классическом стиле")
+        logger.info("✅ Мем готов")
         return output
         
     except Exception as e:

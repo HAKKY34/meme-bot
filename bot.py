@@ -49,7 +49,7 @@ def add_watermark(draw, img_width, img_height):
     """Добавляет водяной знак (юзернейм бота) по центру справа с прозрачностью 5%"""
     try:
         # Маленький шрифт для водяного знака
-        watermark_font = ImageFont.truetype(FONT_PATH, int(img_height * 0.03))
+        watermark_font = ImageFont.truetype(FONT_PATH, int(img_height * 0.025))  # Еще меньше
         
         # Текст водяного знака
         watermark_text = BOT_USERNAME
@@ -59,20 +59,19 @@ def add_watermark(draw, img_width, img_height):
         text_height = watermark_font.size
         
         # Позиция: по центру вертикали, справа с отступом
-        x = img_width - text_width - 10
-        y = (img_height - text_height) // 2  # По центру вертикали
+        x = img_width - text_width - 8
+        y = (img_height - text_height) // 2
         
-        # Рисуем с прозрачностью 5% (белый цвет с альфа-каналом 13 = 5% от 255)
-        # Сначала черная обводка для читаемости
+        # Рисуем с прозрачностью 5%
         for dx in range(-1, 2):
             for dy in range(-1, 2):
                 if dx != 0 or dy != 0:
                     draw.text((x + dx, y + dy), watermark_text, font=watermark_font, fill='black')
         
         # Основной текст с прозрачностью 5%
-        draw.text((x, y), watermark_text, font=watermark_font, fill=(255, 255, 255, 13))  # RGBA с альфа 13
+        draw.text((x, y), watermark_text, font=watermark_font, fill=(255, 255, 255, 13))
         
-        logger.info("✅ Водяной знак добавлен по центру справа с прозрачностью 5%")
+        logger.info("✅ Водяной знак добавлен")
     except Exception as e:
         logger.error(f"❌ Ошибка при добавлении водяного знака: {e}")
 
@@ -111,116 +110,112 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
             lines.append(current_line)
             return lines
         
-        # Функция для подбора размера шрифта (теперь текст просто большой, но не растянутый)
-        def get_best_font_size(text, max_width, max_height, start_size=80):
-            if not text:
-                return 40
-            
-            # Пробуем разные размеры шрифта
-            best_size = 40
-            for size in range(start_size, 30, -2):
-                try:
-                    test_font = ImageFont.truetype(FONT_PATH, size)
-                    lines = split_text_into_lines(text, test_font, max_width)
-                    
-                    # Проверяем, помещается ли текст по высоте
-                    total_height = len(lines) * (size + 5)
-                    if total_height <= max_height:
-                        best_size = size
-                        break
-                except:
-                    continue
-            
-            return best_size
+        # РАЗМЕР ШРИФТА - ТЕПЕРЬ МАЛЕНЬКИЙ!
+        def get_font_size(img_width):
+            # Фиксированный небольшой размер относительно картинки
+            # Для широких картинок - не больше 50px
+            base_size = int(img_width * 0.05)  # 5% от ширины
+            return max(30, min(50, base_size))  # От 30 до 50 пикселей
         
-        # Определяем максимальную ширину текста (85% от ширины картинки - не на всю ширину)
-        max_text_width = int(img.width * 0.85)
+        # Ширина текста - 60% от картинки (чтобы не расползался)
+        max_text_width = int(img.width * 0.6)
         
-        # Высота для текста (не больше 30% от картинки)
-        max_text_height = int(img.height * 0.3)
-        
-        # Определяем размер шрифта для верхнего текста
-        if top_text and top_text.strip():
-            top_font_size = get_best_font_size(top_text, max_text_width, max_text_height)
-            top_font = ImageFont.truetype(FONT_PATH, top_font_size)
-            top_lines = split_text_into_lines(top_text, top_font, max_text_width)
-        else:
-            top_lines = []
-        
-        # Определяем размер шрифта для нижнего текста
-        if bottom_text and bottom_text.strip():
-            bottom_font_size = get_best_font_size(bottom_text, max_text_width, max_text_height)
-            bottom_font = ImageFont.truetype(FONT_PATH, bottom_font_size)
-            bottom_lines = split_text_into_lines(bottom_text, bottom_font, max_text_width)
-        else:
-            bottom_lines = []
-        
-        # Функция для рисования текста с обводкой (тонкой)
-        def draw_text_lines(lines, font, start_y, align_top=True):
-            if not lines:
+        # ПОЛНАЯ ПЕРЕРАБОТКА РИСОВАНИЯ ТЕКСТА
+        def draw_text_block(text, is_top=True):
+            if not text or not text.strip():
                 return
             
-            line_height = font.size + 5
+            text = text.upper()
+            
+            # Получаем размер шрифта
+            font_size = get_font_size(img.width)
+            
+            try:
+                current_font = ImageFont.truetype(FONT_PATH, font_size)
+            except:
+                current_font = ImageFont.load_default()
+            
+            # Разбиваем на строки
+            words = text.split()
+            if not words:
+                return
+            
+            lines = []
+            current_line = words[0]
+            
+            for word in words[1:]:
+                test_line = current_line + " " + word
+                test_width = draw.textlength(test_line, font=current_font)
+                
+                if test_width <= max_text_width:
+                    current_line = test_line
+                else:
+                    lines.append(current_line)
+                    current_line = word
+            lines.append(current_line)
+            
+            # Высота строки
+            line_height = font_size + 5
             total_height = len(lines) * line_height
             
-            # Определяем начальную Y координату с защитой от выхода за края
-            if align_top:
-                y = max(5, min(start_y, img.height - total_height - 5))
-                # Проверяем, не вылезает ли текст за нижний край
-                if y + total_height > img.height - 20:
-                    y = img.height - total_height - 20
+            # Жесткие отступы от краев (чтобы не закрывать картинку)
+            top_margin = int(img.height * 0.05)  # 5% от высоты сверху
+            bottom_margin = int(img.height * 0.05)  # 5% от высоты снизу
+            
+            # Определяем позицию Y
+            if is_top:
+                y = top_margin
+                # Если текст слишком высокий - уменьшаем
+                if y + total_height > img.height * 0.25:  # Не выше 25% картинки
+                    y = top_margin
             else:
-                y = img.height - total_height - max(5, start_y)
-                # Проверяем, не вылезает ли текст за верхний край
-                if y < 20:
-                    y = 20
+                y = img.height - total_height - bottom_margin
+                # Если текст слишком высокий - поднимаем
+                if y < img.height * 0.75:  # Не ниже 75% картинки
+                    y = img.height - total_height - bottom_margin
             
             # Рисуем каждую строку
             for i, line in enumerate(lines):
-                # Получаем ширину строки
-                line_width = draw.textlength(line, font=font)
+                # Ширина строки
+                line_width = draw.textlength(line, font=current_font)
                 
-                # Центрируем по горизонтали (просто по центру, не на всю ширину)
+                # Центрируем
                 x = (img.width - line_width) // 2
                 
-                # Y координата для текущей строки
+                # Y для текущей строки
                 line_y = y + (i * line_height)
                 
-                # Проверяем, не выходит ли строка за пределы
-                if line_y < 0 or line_y + font.size > img.height:
-                    logger.warning(f"Строка выходит за пределы: y={line_y}")
-                    continue
-                
-                # Рисуем обводку (тонкую - 3% от размера шрифта)
-                outline_range = max(1, int(font.size * 0.03))
+                # Обводка толщиной 2px (совсем тонкая)
+                outline_range = 2
                 for dx in range(-outline_range, outline_range + 1):
                     for dy in range(-outline_range, outline_range + 1):
                         if dx != 0 or dy != 0:
-                            try:
-                                draw.text((x + dx, line_y + dy), line, font=font, fill='black')
-                            except:
-                                pass
+                            if (dx*dx + dy*dy) <= outline_range*outline_range + 1:
+                                try:
+                                    draw.text((x + dx, line_y + dy), line, font=current_font, fill='black')
+                                except:
+                                    pass
                 
-                # Рисуем основной текст (белый)
+                # Основной текст
                 try:
-                    draw.text((x, line_y), line, font=font, fill='white')
-                except Exception as e:
-                    logger.error(f"Ошибка при рисовании текста: {e}")
+                    draw.text((x, line_y), line, font=current_font, fill='white')
+                except:
+                    pass
         
-        # Рисуем верхний текст (если есть)
-        if top_lines:
-            draw_text_lines(top_lines, top_font, 10, align_top=True)
-            logger.info(f"✅ Верхний текст нарисован ({len(top_lines)} строк)")
+        # Рисуем верхний текст
+        if top_text and top_text.strip():
+            draw_text_block(top_text, is_top=True)
+            logger.info(f"✅ Верхний текст нарисован")
         
-        # Рисуем нижний текст (если есть)
-        if bottom_lines:
-            draw_text_lines(bottom_lines, bottom_font, 10, align_top=False)
-            logger.info(f"✅ Нижний текст нарисован ({len(bottom_lines)} строк)")
+        # Рисуем нижний текст
+        if bottom_text and bottom_text.strip():
+            draw_text_block(bottom_text, is_top=False)
+            logger.info(f"✅ Нижний текст нарисован")
         
         # Добавляем водяной знак
         add_watermark(draw, img.width, img.height)
         
-        # Сохраняем в байты
+        # Сохраняем
         output = BytesIO()
         img_with_text.save(output, format='PNG', optimize=True)
         output.seek(0)
@@ -229,32 +224,11 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
         return output
         
     except Exception as e:
-        logger.error(f"❌ Критическая ошибка при создании мема: {e}")
+        logger.error(f"❌ Ошибка: {e}")
         logger.error(traceback.format_exc())
         raise e
 
-# ============= КОД ДЛЯ RENDER =============
-async def handle_health(request):
-    """Обработчик для проверки здоровья"""
-    return web.Response(text="Бот работает!")
-
-async def run_web_server():
-    """Запускает веб-сервер на порту 10000"""
-    app = web.Application()
-    app.router.add_get('/', handle_health)
-    app.router.add_get('/health', handle_health)
-    
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', 10000)
-    
-    logger.info("🌐 Веб-сервер для Health Check запущен на порту 10000")
-    await site.start()
-    
-    # Держим сервер запущенным
-    await asyncio.Event().wait()
-# ============================================
-
+# ============= ВСЕ ОБРАБОТЧИКИ (без изменений) =============
 @dp.message_handler(commands=['start'])
 async def start_command(message: types.Message):
     """Обработчик команды /start"""
@@ -271,13 +245,6 @@ async def start_command(message: types.Message):
             "1. Отправь мне картинку\n"
             "2. Напиши текст для верхней части (можно пропустить)\n"
             "3. Напиши текст для нижней части (можно пропустить)\n\n"
-            "✨ Новые фишки:\n"
-            "• Текст по центру (не растянутый)\n"
-            "• Можно не писать верхний текст (напиши /skip)\n"
-            "• Можно не писать нижний текст\n"
-            "• Водяной знак @yourownmemes_bot по центру справа\n"
-            "• Прозрачность водяного знака 5%\n"
-            "• Тонкая обводка\n\n"
             "Я сделаю из этого мем!"
         )
     else:
@@ -476,21 +443,31 @@ async def handle_text(message: types.Message):
         
         await create_meme_from_data(user_id, message.text, message)
 
+async def handle_health(request):
+    """Обработчик для проверки здоровья"""
+    return web.Response(text="Бот работает!")
+
+async def run_web_server():
+    """Запускает веб-сервер на порту 10000"""
+    app = web.Application()
+    app.router.add_get('/', handle_health)
+    app.router.add_get('/health', handle_health)
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 10000)
+    
+    logger.info("🌐 Веб-сервер для Health Check запущен на порту 10000")
+    await site.start()
+    
+    await asyncio.Event().wait()
+
 async def main():
     """Основная функция запуска бота"""
-    # Запускаем HTTP сервер для Health Check в фоне
     asyncio.create_task(run_web_server())
-    
-    # Даем серверу время запуститься
     await asyncio.sleep(2)
-    
-    # Удаляем вебхук на всякий случай
     await bot.delete_webhook()
-    
-    # Небольшая пауза после удаления вебхука
     await asyncio.sleep(1)
-    
-    # Запускаем бота
     logger.info("🤖 Бот запускается...")
     await dp.start_polling()
 

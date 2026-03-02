@@ -46,7 +46,7 @@ except Exception as e:
     logger.info("📝 Скачайте шрифт Impact Cyrillic и положите в папку fonts/")
 
 def add_watermark(draw, img_width, img_height):
-    """Добавляет водяной знак (юзернейм бота) справа внизу"""
+    """Добавляет водяной знак (юзернейм бота) по центру справа с прозрачностью 5%"""
     try:
         # Маленький шрифт для водяного знака
         watermark_font = ImageFont.truetype(FONT_PATH, int(img_height * 0.03))
@@ -58,20 +58,21 @@ def add_watermark(draw, img_width, img_height):
         text_width = draw.textlength(watermark_text, font=watermark_font)
         text_height = watermark_font.size
         
-        # Позиция: справа внизу с отступом
+        # Позиция: по центру вертикали, справа с отступом
         x = img_width - text_width - 10
-        y = img_height - text_height - 10
+        y = (img_height - text_height) // 2  # По центру вертикали
         
-        # Рисуем с прозрачностью 5% (черный цвет с альфа-каналом)
+        # Рисуем с прозрачностью 5% (белый цвет с альфа-каналом 13 = 5% от 255)
+        # Сначала черная обводка для читаемости
         for dx in range(-1, 2):
             for dy in range(-1, 2):
                 if dx != 0 or dy != 0:
                     draw.text((x + dx, y + dy), watermark_text, font=watermark_font, fill='black')
         
-        # Основной текст с прозрачностью
-        draw.text((x, y), watermark_text, font=watermark_font, fill='white')
+        # Основной текст с прозрачностью 5%
+        draw.text((x, y), watermark_text, font=watermark_font, fill=(255, 255, 255, 13))  # RGBA с альфа 13
         
-        logger.info("✅ Водяной знак добавлен")
+        logger.info("✅ Водяной знак добавлен по центру справа с прозрачностью 5%")
     except Exception as e:
         logger.error(f"❌ Ошибка при добавлении водяного знака: {e}")
 
@@ -86,7 +87,7 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
         
         # Создаем копию для рисования
         img_with_text = img.copy()
-        draw = ImageDraw.Draw(img_with_text, 'RGBA')  # Используем RGBA для прозрачности
+        draw = ImageDraw.Draw(img_with_text, 'RGBA')
         
         # Функция для разбиения текста на строки
         def split_text_into_lines(text, font, max_width):
@@ -110,12 +111,13 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
             lines.append(current_line)
             return lines
         
-        # Функция для подбора размера шрифта (теперь текст занимает всю ширину)
-        def get_best_font_size(text, max_width, max_height, start_size=100):
+        # Функция для подбора размера шрифта (теперь текст просто большой, но не растянутый)
+        def get_best_font_size(text, max_width, max_height, start_size=80):
             if not text:
                 return 40
             
-            # Пробуем разные размеры шрифта (начинаем с большого)
+            # Пробуем разные размеры шрифта
+            best_size = 40
             for size in range(start_size, 30, -2):
                 try:
                     test_font = ImageFont.truetype(FONT_PATH, size)
@@ -124,26 +126,22 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
                     # Проверяем, помещается ли текст по высоте
                     total_height = len(lines) * (size + 5)
                     if total_height <= max_height:
-                        # Проверяем, заполняет ли текст всю ширину
-                        if lines:
-                            last_line_width = draw.textlength(lines[-1], font=test_font)
-                            # Если последняя строка сильно короче, пробуем увеличить шрифт
-                            if last_line_width < max_width * 0.6 and size < start_size - 10:
-                                continue
-                        return size
+                        best_size = size
+                        break
                 except:
                     continue
             
-            return 40
+            return best_size
         
-        # Определяем максимальную ширину текста (95% от ширины картинки)
-        max_text_width = int(img.width * 0.95)
-        max_text_height_top = int(img.height * 0.4)  # 40% высоты для верхнего текста
-        max_text_height_bottom = int(img.height * 0.4)  # 40% высоты для нижнего текста
+        # Определяем максимальную ширину текста (85% от ширины картинки - не на всю ширину)
+        max_text_width = int(img.width * 0.85)
+        
+        # Высота для текста (не больше 30% от картинки)
+        max_text_height = int(img.height * 0.3)
         
         # Определяем размер шрифта для верхнего текста
         if top_text and top_text.strip():
-            top_font_size = get_best_font_size(top_text, max_text_width, max_text_height_top)
+            top_font_size = get_best_font_size(top_text, max_text_width, max_text_height)
             top_font = ImageFont.truetype(FONT_PATH, top_font_size)
             top_lines = split_text_into_lines(top_text, top_font, max_text_width)
         else:
@@ -151,13 +149,13 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
         
         # Определяем размер шрифта для нижнего текста
         if bottom_text and bottom_text.strip():
-            bottom_font_size = get_best_font_size(bottom_text, max_text_width, max_text_height_bottom)
+            bottom_font_size = get_best_font_size(bottom_text, max_text_width, max_text_height)
             bottom_font = ImageFont.truetype(FONT_PATH, bottom_font_size)
             bottom_lines = split_text_into_lines(bottom_text, bottom_font, max_text_width)
         else:
             bottom_lines = []
         
-        # Функция для рисования текста с обводкой (теперь тоньше)
+        # Функция для рисования текста с обводкой (тонкой)
         def draw_text_lines(lines, font, start_y, align_top=True):
             if not lines:
                 return
@@ -165,25 +163,36 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
             line_height = font.size + 5
             total_height = len(lines) * line_height
             
-            # Определяем начальную Y координату
+            # Определяем начальную Y координату с защитой от выхода за края
             if align_top:
-                y = max(10, start_y)
+                y = max(5, min(start_y, img.height - total_height - 5))
+                # Проверяем, не вылезает ли текст за нижний край
+                if y + total_height > img.height - 20:
+                    y = img.height - total_height - 20
             else:
-                y = img.height - total_height - max(10, start_y)
+                y = img.height - total_height - max(5, start_y)
+                # Проверяем, не вылезает ли текст за верхний край
+                if y < 20:
+                    y = 20
             
             # Рисуем каждую строку
             for i, line in enumerate(lines):
                 # Получаем ширину строки
                 line_width = draw.textlength(line, font=font)
                 
-                # Центрируем по горизонтали
+                # Центрируем по горизонтали (просто по центру, не на всю ширину)
                 x = (img.width - line_width) // 2
                 
                 # Y координата для текущей строки
                 line_y = y + (i * line_height)
                 
-                # Рисуем обводку (теперь тоньше - 3% от размера шрифта)
-                outline_range = max(1, int(font.size * 0.03))  # Было 0.08, стало 0.03
+                # Проверяем, не выходит ли строка за пределы
+                if line_y < 0 or line_y + font.size > img.height:
+                    logger.warning(f"Строка выходит за пределы: y={line_y}")
+                    continue
+                
+                # Рисуем обводку (тонкую - 3% от размера шрифта)
+                outline_range = max(1, int(font.size * 0.03))
                 for dx in range(-outline_range, outline_range + 1):
                     for dy in range(-outline_range, outline_range + 1):
                         if dx != 0 or dy != 0:
@@ -263,11 +272,12 @@ async def start_command(message: types.Message):
             "2. Напиши текст для верхней части (можно пропустить)\n"
             "3. Напиши текст для нижней части (можно пропустить)\n\n"
             "✨ Новые фишки:\n"
-            "• Текст автоматически растягивается на всю ширину\n"
-            "• Можно не писать верхний текст (просто нажми Enter)\n"
+            "• Текст по центру (не растянутый)\n"
+            "• Можно не писать верхний текст (напиши /skip)\n"
             "• Можно не писать нижний текст\n"
-            "• Водяной знак @yourownmemes_bot справа внизу\n"
-            "• Обводка стала тоньше\n\n"
+            "• Водяной знак @yourownmemes_bot по центру справа\n"
+            "• Прозрачность водяного знака 5%\n"
+            "• Тонкая обводка\n\n"
             "Я сделаю из этого мем!"
         )
     else:

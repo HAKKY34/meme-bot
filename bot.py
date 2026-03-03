@@ -2,7 +2,7 @@ import os
 import logging
 import asyncio
 import traceback
-from io import BytesIO  # ← ЭТО БЫЛО ПРОПУЩЕНО!
+from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
@@ -78,7 +78,7 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
         img_with_text = img.copy()
         draw = ImageDraw.Draw(img_with_text)
         
-        # Функция для разбиения текста на 2 строки с подбором размера
+        # Функция для разбиения текста на максимум 2 строки (только если не влезает)
         def split_into_two_lines(text, max_width, start_font_size):
             if not text:
                 return [], start_font_size
@@ -87,41 +87,44 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
             if len(words) == 1:
                 return [words[0]], start_font_size
             
-            # Пробуем разные размеры шрифта, чтобы получить 2 строки
+            # Сначала пробуем поместить всё в одну строку
             for font_size in range(start_font_size, 30, -2):
                 try:
                     test_font = ImageFont.truetype(FONT_PATH, font_size)
                 except:
                     test_font = ImageFont.load_default()
                 
-                # Пробуем разные варианты разбиения на 2 строки
+                # Проверяем, влезает ли весь текст в одну строку
+                full_text = " ".join(words)
+                text_width = draw.textlength(full_text, font=test_font)
+                
+                if text_width <= max_width:
+                    # Всё влезает в одну строку!
+                    return [full_text], font_size
+                
+                # Если не влезает, пробуем разбить на 2 строки
                 best_lines = None
                 best_diff = float('inf')
                 
-                # Пробуем разбить после каждого слова
                 for i in range(1, len(words)):
                     line1 = " ".join(words[:i])
                     line2 = " ".join(words[i:])
                     
-                    # Проверяем ширину каждой строки
                     w1 = draw.textlength(line1, font=test_font)
                     w2 = draw.textlength(line2, font=test_font)
                     
                     if w1 <= max_width and w2 <= max_width:
-                        # Обе строки помещаются - идеально
                         return [line1, line2], font_size
                     elif w1 <= max_width or w2 <= max_width:
-                        # Хотя бы одна помещается - считаем разницу
                         diff = abs(w1 - w2)
                         if diff < best_diff:
                             best_diff = diff
                             best_lines = [line1, line2]
                 
-                # Если нашли подходящее разбиение на этом размере
                 if best_lines:
                     return best_lines, font_size
             
-            # Если ничего не подошло, берем первый вариант с минимальным размером
+            # Если ничего не подошло, берем последний вариант
             mid = len(words) // 2
             return [" ".join(words[:mid]), " ".join(words[mid:])], 30
         

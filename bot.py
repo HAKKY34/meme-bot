@@ -48,18 +48,15 @@ def resize_image_if_needed(img):
     """
     Увеличивает изображение, если оно слишком маленькое
     """
-    # Минимальная ширина для нормального наложения текста
     MIN_WIDTH = 800
     
     if img.width < MIN_WIDTH:
-        # Рассчитываем новый размер, сохраняя пропорции
         new_width = MIN_WIDTH
         new_height = int(img.height * (MIN_WIDTH / img.width))
         
         logger.info(f"📏 Изображение слишком маленькое ({img.width}x{img.height})")
         logger.info(f"📈 Увеличиваем до {new_width}x{new_height}")
         
-        # Увеличиваем изображение с высоким качеством
         img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
         
     return img
@@ -81,9 +78,11 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
         img_with_text = img.copy()
         draw = ImageDraw.Draw(img_with_text)
         
-        # ===== КЛАССИЧЕСКИЙ РАЗМЕР МЕМА =====
-        font_size = int(img.width * 0.08)
-        font_size = max(40, min(90, font_size))
+        # ===== УВЕЛИЧЕННЫЙ РАЗМЕР ШРИФТА =====
+        # Теперь 9% от ширины (было 8%)
+        font_size = int(img.width * 0.09)
+        # Минимум 50px (было 40), максимум 110px (было 90)
+        font_size = max(50, min(110, font_size))
         logger.info(f"📏 Размер шрифта: {font_size}px")
         
         try:

@@ -167,9 +167,9 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
         except:
             bottom_font = None
         
-        # ===== ОТСТУПЫ =====
-        top_offset = int(img.height * 0.03)
-        bottom_offset = int(img.height * 0.03)
+        # ===== ОТСТУПЫ - ТЕПЕРЬ ПО 2 ПИКСЕЛЯ (КАК ДОГОВАРИВАЛИСЬ) =====
+        top_offset = 2  # Было int(img.height * 0.03), стало 2
+        bottom_offset = 2  # Было int(img.height * 0.03), стало 2
         
         # Рисуем верхний текст
         if top_lines and top_font:

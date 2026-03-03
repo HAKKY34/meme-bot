@@ -78,31 +78,36 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
         img_with_text = img.copy()
         draw = ImageDraw.Draw(img_with_text)
         
-        # Функция для разбиения текста на максимум 2 строки (только если не влезает)
+        # Функция для разбиения текста на максимум 2 строки
         def split_into_two_lines(text, max_width, start_font_size):
             if not text:
                 return [], start_font_size
             
             words = text.upper().split()
-            if len(words) == 1:
-                return [words[0]], start_font_size
             
-            # Сначала пробуем поместить всё в одну строку
+            # ===== СНАЧАЛА ПРОБУЕМ ВМЕСТИТЬ ВСЁ В ОДНУ СТРОКУ =====
             for font_size in range(start_font_size, 30, -2):
                 try:
                     test_font = ImageFont.truetype(FONT_PATH, font_size)
                 except:
                     test_font = ImageFont.load_default()
                 
-                # Проверяем, влезает ли весь текст в одну строку
                 full_text = " ".join(words)
                 text_width = draw.textlength(full_text, font=test_font)
                 
                 if text_width <= max_width:
                     # Всё влезает в одну строку!
                     return [full_text], font_size
+            
+            # ===== НЕ ВЛЕЗЛО В ОДНУ СТРОКУ - ПРОБУЕМ 2 СТРОКИ =====
+            # Пробуем разные размеры для 2 строк
+            for font_size in range(start_font_size, 30, -2):
+                try:
+                    test_font = ImageFont.truetype(FONT_PATH, font_size)
+                except:
+                    test_font = ImageFont.load_default()
                 
-                # Если не влезает, пробуем разбить на 2 строки
+                # Пробуем разные варианты разбиения на 2 строки
                 best_lines = None
                 best_diff = float('inf')
                 
@@ -114,8 +119,10 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
                     w2 = draw.textlength(line2, font=test_font)
                     
                     if w1 <= max_width and w2 <= max_width:
+                        # Идеально - обе строки помещаются
                         return [line1, line2], font_size
                     elif w1 <= max_width or w2 <= max_width:
+                        # Хотя бы одна помещается - запоминаем
                         diff = abs(w1 - w2)
                         if diff < best_diff:
                             best_diff = diff
@@ -124,7 +131,7 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
                 if best_lines:
                     return best_lines, font_size
             
-            # Если ничего не подошло, берем последний вариант
+            # Если совсем ничего не вышло - последний вариант
             mid = len(words) // 2
             return [" ".join(words[:mid]), " ".join(words[mid:])], 30
         

@@ -44,6 +44,26 @@ except Exception as e:
     logger.error(f"❌ Не удалось загрузить шрифт: {e}")
     logger.info("📝 Скачайте шрифт Impact Cyrillic и положите в папку fonts/")
 
+def resize_image_if_needed(img):
+    """
+    Увеличивает изображение, если оно слишком маленькое
+    """
+    # Минимальная ширина для нормального наложения текста
+    MIN_WIDTH = 800
+    
+    if img.width < MIN_WIDTH:
+        # Рассчитываем новый размер, сохраняя пропорции
+        new_width = MIN_WIDTH
+        new_height = int(img.height * (MIN_WIDTH / img.width))
+        
+        logger.info(f"📏 Изображение слишком маленькое ({img.width}x{img.height})")
+        logger.info(f"📈 Увеличиваем до {new_width}x{new_height}")
+        
+        # Увеличиваем изображение с высоким качеством
+        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        
+    return img
+
 def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> BytesIO:
     """
     Создает мем с текстом как в интернете - классический размер
@@ -51,7 +71,11 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
     try:
         # Открываем изображение
         img = Image.open(BytesIO(image_bytes)).convert('RGBA')
-        logger.info(f"✅ Изображение загружено: размер {img.width}x{img.height}")
+        logger.info(f"✅ Исходное изображение: размер {img.width}x{img.height}")
+        
+        # Увеличиваем если нужно
+        img = resize_image_if_needed(img)
+        logger.info(f"✅ После обработки: размер {img.width}x{img.height}")
         
         # Создаем копию
         img_with_text = img.copy()

@@ -22,7 +22,9 @@ logger = logging.getLogger(__name__)
 
 # Инициализация бота и диспетчера
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-CHANNELS = ["@krovotok_tg", "@celebrityfunfacts"]  # Два канала для подписки
+
+# Два канала для подписки (ОБА ЗДЕСЬ!)
+CHANNELS = ["@krovotok_tg", "@celebrityfunfacts"]
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
@@ -51,10 +53,14 @@ async def check_subscription(user_id: int) -> tuple[bool, list]:
             member = await bot.get_chat_member(chat_id=channel, user_id=user_id)
             if member.status in ['left', 'kicked']:
                 not_subscribed.append(channel)
+                logger.info(f"Пользователь {user_id} НЕ подписан на {channel}")
+            else:
+                logger.info(f"Пользователь {user_id} подписан на {channel}")
         except Exception as e:
             logger.error(f"Ошибка проверки канала {channel}: {e}")
             not_subscribed.append(channel)
     
+    logger.info(f"Результат проверки: подписан={len(not_subscribed)==0}, не подписан на: {not_subscribed}")
     return len(not_subscribed) == 0, not_subscribed
 
 def get_subscription_keyboard(not_subscribed: list):
@@ -173,8 +179,8 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
         base_font_size = int(img.width * 0.09)
         base_font_size = max(40, min(100, base_font_size))
         
-        # Максимальная ширина текста (чуть меньше, чтобы не вылезало)
-        max_text_width = int(img.width * 0.8)  # Уменьшил с 0.85 до 0.8
+        # Максимальная ширина текста
+        max_text_width = int(img.width * 0.8)
         
         # Обрабатываем верхний текст
         top_lines = []

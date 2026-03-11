@@ -23,8 +23,10 @@ logger = logging.getLogger(__name__)
 # Инициализация бота и диспетчера
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
-# Два канала для подписки (ОБА ЗДЕСЬ!)
-CHANNELS = ["@krovotok_tg", "@celebrityfunfacts"]
+# ===== ВАЖНО! ЗДЕСЬ ДВА КАНАЛА =====
+CHANNEL_1 = "@krovotok_tg"
+CHANNEL_2 = "@celebrityfunfacts"
+CHANNELS = [CHANNEL_1, CHANNEL_2]  # Список из двух каналов
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
@@ -44,29 +46,43 @@ except Exception as e:
     logger.error(f"❌ Не удалось загрузить шрифт: {e}")
     logger.info("📝 Скачайте шрифт Impact Cyrillic и положите в папку fonts/")
 
-async def check_subscription(user_id: int) -> tuple[bool, list]:
-    """Проверяет подписку на все каналы"""
+async def check_subscription(user_id: int):
+    """
+    Проверяет подписку на ВСЕ каналы из списка CHANNELS
+    Возвращает: (True/False, список каналов на которые не подписан)
+    """
     not_subscribed = []
     
+    # Проходим по КАЖДОМУ каналу в списке
     for channel in CHANNELS:
         try:
+            logger.info(f"🔍 Проверяю канал {channel} для пользователя {user_id}")
             member = await bot.get_chat_member(chat_id=channel, user_id=user_id)
+            
+            # Проверяем статус
             if member.status in ['left', 'kicked']:
                 not_subscribed.append(channel)
-                logger.info(f"Пользователь {user_id} НЕ подписан на {channel}")
+                logger.info(f"❌ Пользователь {user_id} НЕ подписан на {channel}")
             else:
-                logger.info(f"Пользователь {user_id} подписан на {channel}")
+                logger.info(f"✅ Пользователь {user_id} подписан на {channel}")
+                
         except Exception as e:
-            logger.error(f"Ошибка проверки канала {channel}: {e}")
-            not_subscribed.append(channel)
+            logger.error(f"⚠️ Ошибка при проверке {channel}: {e}")
+            not_subscribed.append(channel)  # Если ошибка - считаем что не подписан
     
-    logger.info(f"Результат проверки: подписан={len(not_subscribed)==0}, не подписан на: {not_subscribed}")
-    return len(not_subscribed) == 0, not_subscribed
+    # Если список пустой - значит подписан на всё
+    is_subscribed = len(not_subscribed) == 0
+    logger.info(f"📊 Итог: подписан={is_subscribed}, не подписан на: {not_subscribed}")
+    
+    return is_subscribed, not_subscribed
 
-def get_subscription_keyboard(not_subscribed: list):
-    """Создает клавиатуру с кнопками подписки"""
+def get_subscription_keyboard(not_subscribed):
+    """
+    Создает клавиатуру с кнопками для каждого канала
+    """
     keyboard = InlineKeyboardMarkup(row_width=1)
     
+    # Добавляем кнопку для каждого канала, на который не подписан
     for channel in not_subscribed:
         channel_name = channel.replace('@', '')
         btn = InlineKeyboardButton(
@@ -75,6 +91,7 @@ def get_subscription_keyboard(not_subscribed: list):
         )
         keyboard.add(btn)
     
+    # Кнопка проверки
     check_btn = InlineKeyboardButton(
         text="✅ Я подписался",
         callback_data="check_sub"
@@ -84,40 +101,32 @@ def get_subscription_keyboard(not_subscribed: list):
     return keyboard
 
 def resize_image_if_needed(img):
-    """
-    Увеличивает изображение, если оно слишком маленькое
-    """
+    """Увеличивает маленькие изображения"""
     MIN_WIDTH = 800
     
     if img.width < MIN_WIDTH:
         new_width = MIN_WIDTH
         new_height = int(img.height * (MIN_WIDTH / img.width))
-        
-        logger.info(f"📏 Изображение слишком маленькое ({img.width}x{img.height})")
-        logger.info(f"📈 Увеличиваем до {new_width}x{new_height}")
-        
+        logger.info(f"📏 Увеличиваем с {img.width}x{img.height} до {new_width}x{new_height}")
         img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
         
     return img
 
 def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> BytesIO:
-    """
-    Создает мем с текстом как в интернете - максимум 2 строки
-    """
+    """Создает мем с текстом"""
     try:
         # Открываем изображение
         img = Image.open(BytesIO(image_bytes)).convert('RGBA')
-        logger.info(f"✅ Исходное изображение: размер {img.width}x{img.height}")
+        logger.info(f"✅ Исходное изображение: {img.width}x{img.height}")
         
         # Увеличиваем если нужно
         img = resize_image_if_needed(img)
-        logger.info(f"✅ После обработки: размер {img.width}x{img.height}")
         
         # Создаем копию
         img_with_text = img.copy()
         draw = ImageDraw.Draw(img_with_text)
         
-        # Функция для разбиения текста на максимум 2 строки
+        # Функция для разбиения текста
         def split_into_lines(text, max_width, start_font_size):
             if not text:
                 return [], start_font_size
@@ -126,7 +135,7 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
             if not words:
                 return [], start_font_size
             
-            # Сначала пробуем поместить всё в одну строку
+            # Сначала пробуем в одну строку
             for font_size in range(start_font_size, 30, -2):
                 try:
                     test_font = ImageFont.truetype(FONT_PATH, font_size)
@@ -139,18 +148,12 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
                 if text_width <= max_width:
                     return [full_text], font_size
             
-            # Если не влезло в одну строку, пробуем разбить на 2
-            best_font_size = start_font_size
-            best_lines = []
-            
+            # Если не влезло - пробуем в 2 строки
             for font_size in range(start_font_size, 30, -2):
                 try:
                     test_font = ImageFont.truetype(FONT_PATH, font_size)
                 except:
                     test_font = ImageFont.load_default()
-                
-                # Пробуем разные варианты разбиения
-                found_good = False
                 
                 for i in range(1, len(words)):
                     line1 = " ".join(words[:i])
@@ -160,26 +163,15 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
                     w2 = draw.textlength(line2, font=test_font)
                     
                     if w1 <= max_width and w2 <= max_width:
-                        best_lines = [line1, line2]
-                        best_font_size = font_size
-                        found_good = True
-                        break
-                
-                if found_good:
-                    break
+                        return [line1, line2], font_size
             
-            if best_lines:
-                return best_lines, best_font_size
-            
-            # Если ничего не подошло - разбиваем примерно пополам с минимальным размером
+            # Если ничего не вышло - последний вариант
             mid = len(words) // 2
             return [" ".join(words[:mid]), " ".join(words[mid:])], 30
         
-        # Определяем базовый размер шрифта
+        # Параметры текста
         base_font_size = int(img.width * 0.09)
         base_font_size = max(40, min(100, base_font_size))
-        
-        # Максимальная ширина текста
         max_text_width = int(img.width * 0.8)
         
         # Обрабатываем верхний текст
@@ -187,16 +179,14 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
         top_font_size = base_font_size
         if top_text and top_text.strip():
             top_lines, top_font_size = split_into_lines(top_text, max_text_width, base_font_size)
-            logger.info(f"📏 Верхний текст: размер {top_font_size}px, {len(top_lines)} строк")
         
         # Обрабатываем нижний текст
         bottom_lines = []
         bottom_font_size = base_font_size
         if bottom_text and bottom_text.strip():
             bottom_lines, bottom_font_size = split_into_lines(bottom_text, max_text_width, base_font_size)
-            logger.info(f"📏 Нижний текст: размер {bottom_font_size}px, {len(bottom_lines)} строк")
         
-        # Загружаем шрифты для каждого текста
+        # Загружаем шрифты
         try:
             top_font = ImageFont.truetype(FONT_PATH, top_font_size) if top_lines else None
         except:
@@ -207,7 +197,7 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
         except:
             bottom_font = None
         
-        # ===== ОТСТУПЫ - ПО 2 ПИКСЕЛЯ =====
+        # Отступы по 2 пикселя
         top_offset = 2
         bottom_offset = 2
         
@@ -221,11 +211,7 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
                 x = (img.width - line_width) // 2
                 line_y = y + (i * line_height)
                 
-                # Проверяем, не выходит ли за пределы
-                if line_y + top_font_size > img.height:
-                    line_y = img.height - top_font_size - 5
-                
-                # Обводка 3px
+                # Обводка
                 outline = 3
                 for dx in range(-outline, outline + 1):
                     for dy in range(-outline, outline + 1):
@@ -240,10 +226,6 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
             line_height = bottom_font_size + 8
             total_height = len(bottom_lines) * line_height
             y = img.height - total_height - bottom_offset
-            
-            # Проверяем, не выходит ли за пределы
-            if y < 0:
-                y = 0
             
             for i, line in enumerate(bottom_lines):
                 line_width = draw.textlength(line, font=bottom_font)
@@ -264,7 +246,6 @@ def create_meme_image(image_bytes: bytes, top_text: str, bottom_text: str) -> By
         img_with_text.save(output, format='PNG', optimize=True)
         output.seek(0)
         
-        logger.info("✅ Мем готов")
         return output
         
     except Exception as e:
@@ -278,7 +259,7 @@ async def start_command(message: types.Message):
     user_id = message.from_user.id
     logger.info(f"Пользователь {user_id} запустил бота")
     
-    # Проверяем подписку на все каналы
+    # Проверяем подписку на ВСЕ каналы
     is_subscribed, not_subscribed = await check_subscription(user_id)
     
     if is_subscribed:
@@ -292,17 +273,17 @@ async def start_command(message: types.Message):
         )
     else:
         keyboard = get_subscription_keyboard(not_subscribed)
-        channels_list = "\n".join([f"• {ch}" for ch in not_subscribed])
+        channels_text = "\n".join([f"• {ch}" for ch in not_subscribed])
         await message.answer(
-            f"❌ Чтобы пользоваться ботом, нужно подписаться на каналы:\n{channels_list}",
-            reply_markup=keyboard,
-            parse_mode=ParseMode.HTML
+            f"❌ Чтобы пользоваться ботом, нужно подписаться на каналы:\n{channels_text}",
+            reply_markup=keyboard
         )
 
 @dp.callback_query_handler(lambda c: c.data == 'check_sub')
 async def check_sub_callback(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
     
+    # Проверяем подписку снова
     is_subscribed, not_subscribed = await check_subscription(user_id)
     
     if is_subscribed:
@@ -314,15 +295,17 @@ async def check_sub_callback(callback_query: types.CallbackQuery):
         )
     else:
         keyboard = get_subscription_keyboard(not_subscribed)
-        channels_list = "\n".join([f"• {ch}" for ch in not_subscribed])
+        channels_text = "\n".join([f"• {ch}" for ch in not_subscribed])
+        
         await bot.answer_callback_query(
             callback_query.id, 
-            text="❌ Подписка не найдена!",
+            text="❌ Подписка не найдена",
             show_alert=True
         )
+        
         await bot.send_message(
             user_id,
-            f"❌ Всё ещё не подписан на:\n{channels_list}",
+            f"❌ Всё ещё не подписан на:\n{channels_text}",
             reply_markup=keyboard
         )
 
@@ -336,9 +319,9 @@ async def handle_photo(message: types.Message):
     
     if not is_subscribed:
         keyboard = get_subscription_keyboard(not_subscribed)
-        channels_list = "\n".join([f"• {ch}" for ch in not_subscribed])
+        channels_text = "\n".join([f"• {ch}" for ch in not_subscribed])
         await message.answer(
-            f"❌ Чтобы пользоваться ботом, нужно подписаться на каналы:\n{channels_list}",
+            f"❌ Чтобы пользоваться ботом, нужно подписаться на каналы:\n{channels_text}",
             reply_markup=keyboard
         )
         return
@@ -356,8 +339,8 @@ async def handle_photo(message: types.Message):
             "(или отправь /skip чтобы пропустить, или /cancel чтобы отменить)"
         )
     except Exception as e:
-        logger.error(f"❌ Ошибка при обработке фото: {e}")
-        await message.answer("❌ Не удалось обработать фото. Попробуй другую картинку.")
+        logger.error(f"❌ Ошибка: {e}")
+        await message.answer("❌ Не удалось обработать фото")
 
 @dp.message_handler(commands=['skip'])
 async def skip_command(message: types.Message):
@@ -378,28 +361,26 @@ async def skip_command(message: types.Message):
         )
     elif current_stage == 'waiting_bottom_text':
         await create_meme_from_data(user_id, '', message)
-    else:
-        await message.answer("❌ Непонятная команда. Напиши /cancel и начни заново.")
 
 @dp.message_handler(commands=['cancel'])
 async def cancel_command(message: types.Message):
     user_id = message.from_user.id
     if user_id in user_data:
         del user_data[user_id]
-        await message.answer("✅ Создание мема отменено. Можешь начать заново с отправки картинки.")
+        await message.answer("✅ Создание мема отменено")
     else:
-        await message.answer("🤷 Нет активного процесса создания мема.")
+        await message.answer("🤷 Нет активного процесса")
 
 async def create_meme_from_data(user_id, bottom_text, message):
     top_text = user_data[user_id].get('top_text', '')
     image_bytes = user_data[user_id].get('image')
     
     if not image_bytes:
-        await message.answer("❌ Что-то пошло не так. Начни заново с отправки картинки.")
+        await message.answer("❌ Ошибка")
         del user_data[user_id]
         return
     
-    processing_msg = await message.answer("🔄 Создаю мем... (это может занять несколько секунд)")
+    processing_msg = await message.answer("🔄 Создаю мем...")
     
     try:
         meme_image = create_meme_image(image_bytes, top_text, bottom_text)
@@ -412,12 +393,8 @@ async def create_meme_from_data(user_id, bottom_text, message):
         await processing_msg.delete()
         
     except Exception as e:
-        logger.error(f"❌ Ошибка создания мема: {e}")
-        logger.error(traceback.format_exc())
-        await message.answer(
-            "❌ Не удалось создать мем.\n"
-            "Попробуй другую картинку или напиши /start"
-        )
+        logger.error(f"❌ Ошибка: {e}")
+        await message.answer("❌ Не удалось создать мем")
     
     del user_data[user_id]
 
@@ -430,37 +407,34 @@ async def handle_text(message: types.Message):
     
     if not is_subscribed:
         keyboard = get_subscription_keyboard(not_subscribed)
-        channels_list = "\n".join([f"• {ch}" for ch in not_subscribed])
+        channels_text = "\n".join([f"• {ch}" for ch in not_subscribed])
         await message.answer(
-            f"❌ Чтобы пользоваться ботом, нужно подписаться на каналы:\n{channels_list}",
+            f"❌ Чтобы пользоваться ботом, нужно подписаться на каналы:\n{channels_text}",
             reply_markup=keyboard
         )
         return
     
     if user_id not in user_data:
-        await message.answer(
-            "❌ Сначала отправь картинку!\n"
-            "Или напиши /start чтобы начать"
-        )
+        await message.answer("❌ Сначала отправь картинку!")
         return
     
     current_stage = user_data[user_id].get('stage')
     
     if current_stage == 'waiting_top_text':
         if len(message.text) > 200:
-            await message.answer("❌ Текст слишком длинный! Максимум 200 символов.")
+            await message.answer("❌ Текст слишком длинный")
             return
             
         user_data[user_id]['top_text'] = message.text
         user_data[user_id]['stage'] = 'waiting_bottom_text'
         await message.answer(
             "📝 Теперь напиши текст для НИЖНЕЙ части мема\n"
-            "(или отправь /skip чтобы пропустить, или /cancel чтобы отменить)"
+            "(или отправь /skip чтобы пропустить)"
         )
         
     elif current_stage == 'waiting_bottom_text':
         if len(message.text) > 200:
-            await message.answer("❌ Текст слишком длинный! Максимум 200 символов.")
+            await message.answer("❌ Текст слишком длинный")
             return
         
         await create_meme_from_data(user_id, message.text, message)
@@ -478,16 +452,14 @@ async def run_web_server():
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', 10000)
     
-    logger.info("🌐 Веб-сервер для Health Check запущен на порту 10000")
+    logger.info("🌐 Веб-сервер запущен")
     await site.start()
-    
     await asyncio.Event().wait()
 
 async def main():
     asyncio.create_task(run_web_server())
     await asyncio.sleep(2)
     await bot.delete_webhook()
-    await asyncio.sleep(1)
     logger.info("🤖 Бот запускается...")
     await dp.start_polling()
 
@@ -496,6 +468,3 @@ if __name__ == '__main__':
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Бот остановлен")
-    except Exception as e:
-        logger.error(f"Критическая ошибка: {e}")
-        logger.error(traceback.format_exc())
